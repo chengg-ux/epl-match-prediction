@@ -45,7 +45,8 @@ pred, allm = load()
 st.title("⚽ 英超赛事胜平负概率预测")
 st.warning("**仅供学习研究，不构成投注建议。** 本项目是统计建模练习，模型在回测中没有跑赢博彩赔率。")
 
-tab1, tab2, tab3 = st.tabs(["📅 逐场预测", "📊 回测表现", "ℹ️ 关于"])
+tab_up, tab1, tab_form, tab2, tab_log, tab3 = st.tabs(
+    ["🔮 下一轮预测", "📅 历史逐场", "📈 球队状态曲线", "📊 回测表现", "📝 赛后对答案", "ℹ️ 关于"])
 
 # ------------------------------------------------------------ 逐场预测 ----
 with tab1:
@@ -127,8 +128,62 @@ with tab2:
                                     "ci_lo": "区间下限", "ci_hi": "区间上限"}).round(4),
                  width='stretch', hide_index=True)
 
+# ------------------------------------------------------------ 下一轮预测 ----
+with tab_up:
+    up = pd.read_csv(RES / "upcoming.csv", parse_dates=["Date"])
+    st.caption("用截至最近一场已赛比赛的全部数据实时拟合，预测官方赛程表里的未来比赛。数据来自 football-data.co.uk，更新频率约每周一次。")
+    if up.empty:
+        st.info("当前赛程表里没有英超比赛（可能正值国际比赛日，或赛程尚未公布）。比赛日临近、数据更新后这里会自动出现预测。")
+    else:
+        st.dataframe(pd.DataFrame({
+            "日期": up["Date"].dt.strftime("%Y-%m-%d"), "对阵": up["HomeTeam"] + " vs " + up["AwayTeam"],
+            "Elo 主/平/客": [f"{a:.0%} / {b:.0%} / {c:.0%}" for a, b, c in zip(up.elo_pH, up.elo_pD, up.elo_pA)],
+            "泊松 主/平/客": [f"{a:.0%} / {b:.0%} / {c:.0%}" for a, b, c in zip(up.poisson_pH, up.poisson_pD, up.poisson_pA)],
+            "赔率 主/平/客": [("—" if pd.isna(a) else f"{a:.0%} / {b:.0%} / {c:.0%}") for a, b, c in zip(up.bookmaker_pH, up.bookmaker_pD, up.bookmaker_pA)],
+        }), width="stretch", hide_index=True)
+        st.caption("这些是实时预测，尚无评估成绩；比赛踢完后会进入「赛后对答案」。")
+
+# ---------------------------------------------------------- 球队状态曲线 ----
+with tab_form:
+    eh = pd.read_csv(RES / "elo_history.csv", parse_dates=["Date"])
+    st.caption("Elo 分数就是球队的「战力分」：赢球上升、输球下降。曲线的起伏就是球队状态的起伏。")
+    latest = eh.sort_values("Date").groupby("Team").tail(1)
+    default = latest.sort_values("Elo", ascending=False)["Team"].head(4).tolist()
+    teams = st.multiselect("选择球队（可多选对比）", sorted(eh["Team"].unique()), default=default)
+    start = st.selectbox("起始赛季", sorted(eh["Season"].unique()), index=len(eh["Season"].unique()) - 3)
+    sub = eh[(eh["Team"].isin(teams)) & (eh["Season"] >= start)]
+    fig = px.line(sub, x="Date", y="Elo", color="Team")
+    fig.update_layout(height=480, yaxis_title="Elo 分数")
+    st.plotly_chart(fig, width="stretch")
+    st.subheader("当前 Elo 排名（最新一场之后）")
+    rank = latest.sort_values("Elo", ascending=False)
+    rank = rank[rank["Season"] == eh["Season"].max()][["Team", "Elo"]].round(0).astype({"Elo": int})
+    st.dataframe(rank.rename(columns={"Team": "球队"}), hide_index=True, width="stretch")
+
+# ---------------------------------------------------------- 赛后对答案 ----
+with tab_log:
+    st.caption("每条预测都在比赛开始前写入日志，之后永不修改，赛后只补充实际结果——所以这是真正的事前预测记录。")
+    lg = pd.read_csv(RES / "live_log.csv", parse_dates=["Date"])
+    if lg.empty:
+        st.info("日志还是空的：从下一次有英超赛程的更新开始记录，比赛踢完后会在这里「对答案」。")
+    else:
+        done = lg.dropna(subset=["FTR"])
+        st.write(f"已记录 {len(lg)} 场，其中已踢完 {len(done)} 场。")
+        if len(done):
+            from src.metrics import log_loss, accuracy
+            rows = []
+            for k in ["elo", "poisson", "bookmaker"]:
+                d = done.dropna(subset=[f"{k}_pH"])
+                if len(d):
+                    p = d[[f"{k}_pH", f"{k}_pD", f"{k}_pA"]].values
+                    rows.append({"模型": MODELS[k], "场次": len(d), "LogLoss": log_loss(p, d["FTR"].values),
+                                 "准确率": accuracy(p, d["FTR"].values)})
+            st.dataframe(pd.DataFrame(rows).style.format({"LogLoss": "{:.3f}", "准确率": "{:.0%}"}), hide_index=True, width="stretch")
+            st.caption("样本很少时指标波动极大，不要过度解读。")
+        st.dataframe(lg.sort_values("Date", ascending=False), hide_index=True, width="stretch")
 # ------------------------------------------------------------------ 关于 ----
 with tab3:
     st.markdown((ROOT / "docs" / "方法说明.md").read_text(encoding="utf-8"))
+
 
 

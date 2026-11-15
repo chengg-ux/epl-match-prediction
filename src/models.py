@@ -65,7 +65,8 @@ class EloModel:
         p_away = expit(-x - self.theta)
         return np.column_stack([p_home, 1 - p_home - p_away, p_away])
 
-    def ratings_before(self, hist: pd.DataFrame) -> dict:
+    def ratings_before(self, hist: pd.DataFrame, record: list | None = None) -> dict:
+        """按时间顺序走完 hist，返回每队最新 Elo。若传入 record 列表，则逐场记录两队赛后分数（画状态曲线用）。"""
         r: dict[str, float] = {}
         last_season = None
         for row in hist.itertuples(index=False):
@@ -82,6 +83,9 @@ class EloModel:
             delta = self.k * mult * (score - exp_home)
             r[row.HomeTeam] = rh + delta
             r[row.AwayTeam] = ra - delta
+            if record is not None:
+                record.append((row.Date, row.Season, row.HomeTeam, r[row.HomeTeam]))
+                record.append((row.Date, row.Season, row.AwayTeam, r[row.AwayTeam]))
         return r
 
     def predict(self, today, hist):
@@ -163,4 +167,5 @@ class PoissonModel:
             p = np.array([np.tril(m, -1).sum(), np.trace(m), np.triu(m, 1).sum()])
             out.append(p / p.sum())
         return np.array(out)
+
 

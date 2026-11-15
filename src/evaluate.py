@@ -1,4 +1,4 @@
-"""读取 results/predictions.csv，生成分赛季指标、置信区间和校准曲线。"""
+﻿"""读取 results/predictions.csv，生成分赛季指标、置信区间和校准曲线。"""
 from pathlib import Path
 
 import matplotlib
@@ -60,7 +60,7 @@ def calibration_plot(w, path):
     fig.tight_layout(); fig.savefig(path, dpi=130); plt.close(fig)
 
 
-if __name__ == "__main__":
+def main():
     w = pd.read_csv(RESULTS / "predictions.csv", parse_dates=["Date"])
     bs = by_season(w)
     bs.to_csv(RESULTS / "metrics_by_season.csv", index=False)
@@ -77,3 +77,8 @@ if __name__ == "__main__":
     bt.to_csv(RESULTS / "bootstrap_logloss_diff.csv", index=False)
     print(bt.round(4).to_string(index=False))
     calibration_plot(w, RESULTS / "calibration.png")
+
+
+if __name__ == "__main__":
+    main()
+
